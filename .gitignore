@@ -1,0 +1,14 @@
+# Credenciales y secretos — NUNCA deben subirse al repositorio
+credenciales_bigquery.json
+.streamlit/secrets.toml
+*.json
+
+# Entornos virtuales de Python, si los usas
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Ficheros del sistema
+.DS_Store
+Thumbs.db
