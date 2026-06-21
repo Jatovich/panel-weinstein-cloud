@@ -1,0 +1,35 @@
+name: Actualizar datos del panel Weinstein
+
+on:
+  schedule:
+    # Cada sábado a las 06:00 UTC (07:00 o 08:00 hora española, según
+    # horario de verano/invierno) — el mercado ya cerró el viernes
+    - cron: '0 6 * * 6'
+  workflow_dispatch:
+    # Esto añade un botón "Run workflow" en GitHub para lanzarlo a mano
+    # cuando quieras, sin esperar al sábado
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Descargar datos de mercado
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: python 02_descargar_datos_cloud.py
+
+      - name: Calcular indicadores
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: python 03_calcular_indicadores_cloud.py

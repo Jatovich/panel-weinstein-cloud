@@ -3,9 +3,3 @@ pandas
 plotly
 google-cloud-bigquery
 db-dtypes
-pyarrow
-requests
-beautifulsoup4
-lxml
-yfinance
-numpy
