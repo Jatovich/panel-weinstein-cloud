@@ -124,11 +124,27 @@ with col3:
     )
 
 with col4:
-    tendencia_ad = "↑ Subiendo" if (amplitud["linea_avance_declive"].iloc[-1] > amplitud["linea_avance_declive"].iloc[-5]) else "↓ Bajando"
-    st.metric(
-        "Línea Avance/Declive (tendencia 5 sem.)",
-        tendencia_ad,
-    )
+    avances_ultima = int(ultima_amplitud["avances"])
+    declives_ultima = int(ultima_amplitud["declives"])
+    saldo_ultima = avances_ultima - declives_ultima
+    tendencia_ad = amplitud["linea_avance_declive"].iloc[-1] > amplitud["linea_avance_declive"].iloc[-5]
+
+    cambio_indice = stage["cierre"].iloc[-1] - stage["cierre"].iloc[-2] if len(stage) > 1 else 0
+    divergencia = (cambio_indice > 0 and not tendencia_ad) or (cambio_indice < 0 and tendencia_ad)
+
+    st.markdown("**Línea Avance/Declive**")
+    col4a, col4b = st.columns(2)
+    with col4a:
+        st.markdown(f"🟢 **{avances_ultima}** suben")
+        st.markdown(f"🔴 **{declives_ultima}** bajan")
+    with col4b:
+        saldo_txt = f"+{saldo_ultima}" if saldo_ultima >= 0 else str(saldo_ultima)
+        saldo_color = "#16a34a" if saldo_ultima >= 0 else "#dc2626"
+        st.markdown(f"**Saldo:** <span style='color:{saldo_color}'>{saldo_txt}</span>", unsafe_allow_html=True)
+        tendencia_txt = "↑ Subiendo" if tendencia_ad else "↓ Bajando"
+        st.markdown(f"**Tendencia 5s:** {tendencia_txt}")
+    if divergencia:
+        st.warning("⚠️ Divergencia: índice y A/D van en sentido contrario")
 
 st.caption(f"Datos a fecha de la última semana cargada: {ultima_amplitud['fecha'].date()}")
 st.divider()
@@ -292,6 +308,120 @@ fig_combo.update_yaxes(title_text="Precio S&P 500", secondary_y=False)
 fig_combo.update_yaxes(title_text="Línea Avance/Declive", secondary_y=True)
 fig_combo.update_layout(height=420, hovermode="x", legend=dict(orientation="h", y=-0.2))
 st.plotly_chart(fig_combo, use_container_width=True)
+
+st.divider()
+
+# ------------------------------------------------------------------
+# ANÁLISIS SEMANAL AUTOMÁTICO
+# ------------------------------------------------------------------
+st.subheader("📋 Análisis semanal")
+st.caption("Texto generado automáticamente a partir de los datos. Puedes copiarlo y adaptarlo para tu newsletter o grupo de Telegram.")
+
+def generar_analisis(amplitud, stage) -> str:
+    ua = amplitud.iloc[-1]
+    ant = amplitud.iloc[-2] if len(amplitud) > 1 else ua
+    us = stage.iloc[-1]
+    us_ant = stage.iloc[-2] if len(stage) > 1 else us
+
+    fecha = ua["fecha"].strftime("%d de %B de %Y").replace(
+        "January","enero").replace("February","febrero").replace("March","marzo"
+        ).replace("April","abril").replace("May","mayo").replace("June","junio"
+        ).replace("July","julio").replace("August","agosto").replace("September","septiembre"
+        ).replace("October","octubre").replace("November","noviembre").replace("December","diciembre")
+
+    etapa = int(us["etapa"]) if pd.notna(us["etapa"]) else None
+    nombres_etapa = {
+        1: "Etapa 1 (Base/Acumulación)",
+        2: "Etapa 2 (Avance/Tendencia alcista)",
+        3: "Etapa 3 (Techo/Distribución)",
+        4: "Etapa 4 (Declive/Tendencia bajista)",
+    }
+    etapa_txt = nombres_etapa.get(etapa, "etapa sin clasificar")
+
+    pct = float(ua["pct_sobre_media_30s"])
+    pct_delta = pct - float(ant["pct_sobre_media_30s"])
+    maximos = int(ua["nuevos_maximos_52s"])
+    minimos = int(ua["nuevos_minimos_52s"])
+    diferencial_hl = maximos - minimos
+    avances = int(ua["avances"])
+    declives = int(ua["declives"])
+    saldo = avances - declives
+    cambio_sp500 = float(us["cierre"]) - float(us_ant["cierre"])
+    tendencia_ad_5s = amplitud["linea_avance_declive"].iloc[-1] > amplitud["linea_avance_declive"].iloc[-5]
+    divergencia = (cambio_sp500 > 0 and not tendencia_ad_5s) or (cambio_sp500 < 0 and tendencia_ad_5s)
+
+    p1 = f"**Semana del {fecha}.** El S&P 500 se encuentra en {etapa_txt}, "
+    if etapa == 2:
+        p1 += "lo que indica que la tendencia de fondo sigue siendo alcista."
+    elif etapa == 3:
+        p1 += "señal de que el mercado puede estar perdiendo fuerza tras el avance reciente."
+    elif etapa == 4:
+        p1 += "confirmando que la tendencia dominante es bajista."
+    elif etapa == 1:
+        p1 += "lo que sugiere consolidación tras la caída anterior, sin tendencia clara todavía."
+    else:
+        p1 += "sin clasificación clara por el momento."
+    variacion_txt = f"+{cambio_sp500:.0f}" if cambio_sp500 >= 0 else f"{cambio_sp500:.0f}"
+    p1 += f" El índice cerró la semana con una variación de {variacion_txt} puntos respecto a la semana anterior."
+
+    if pct >= 70:
+        nivel_pct = "zona de sobrecompra (por encima del 70%)"
+    elif pct >= 50:
+        nivel_pct = "zona saludable (entre el 50% y el 70%)"
+    elif pct >= 30:
+        nivel_pct = "zona de debilidad (entre el 30% y el 50%)"
+    else:
+        nivel_pct = "zona de sobreventa (por debajo del 30%)"
+    delta_txt = f"+{pct_delta:.1f}" if pct_delta >= 0 else f"{pct_delta:.1f}"
+    p2 = (f"**Amplitud de mercado:** el {pct:.1f}% de las acciones del S&P 500 cotizan por encima "
+          f"de su media de 30 semanas ({delta_txt} puntos respecto a la semana anterior), "
+          f"situándose en {nivel_pct}.")
+
+    if diferencial_hl > 50:
+        lectura_hl = "señal de fortaleza interna clara"
+    elif diferencial_hl > 0:
+        lectura_hl = "ligero predominio alcista"
+    elif diferencial_hl == 0:
+        lectura_hl = "equilibrio entre compradores y vendedores"
+    else:
+        lectura_hl = "señal de debilidad interna"
+    p3 = (f"**Nuevos máximos/mínimos de 52 semanas:** esta semana {maximos} acciones marcaron "
+          f"nuevos máximos anuales frente a {minimos} que marcaron nuevos mínimos "
+          f"(diferencial de {'+' if diferencial_hl >= 0 else ''}{diferencial_hl}), "
+          f"lo que representa una {lectura_hl}.")
+
+    tendencia_txt = "sigue subiendo" if tendencia_ad_5s else "lleva bajando"
+    saldo_txt = f"+{saldo}" if saldo >= 0 else str(saldo)
+    p4 = (f"**Línea Avance/Declive:** {avances} acciones avanzaron esta semana frente a {declives} "
+          f"que retrocedieron (saldo {saldo_txt}). La línea acumulada {tendencia_txt} en las últimas 5 semanas.")
+    if divergencia:
+        if cambio_sp500 > 0 and not tendencia_ad_5s:
+            p4 += (" ⚠️ **Atención:** el índice sube pero la línea A/D lleva semanas bajando — "
+                   "divergencia bajista que históricamente ha anticipado giros de mercado.")
+        elif cambio_sp500 < 0 and tendencia_ad_5s:
+            p4 += (" ⚠️ **Atención:** el índice baja pero la línea A/D sigue subiendo — "
+                   "divergencia alcista que puede indicar que la caída no tiene respaldo interno.")
+
+    return "\n\n".join([p1, p2, p3, p4])
+
+
+texto_analisis = generar_analisis(amplitud, stage)
+st.markdown(texto_analisis)
+
+texto_plano = texto_analisis.replace("**", "").replace("⚠️ ", "")
+st.components.v1.html(f"""
+    <textarea id="texto_copia" style="position:absolute;left:-9999px;">{texto_plano}</textarea>
+    <button onclick="
+        var t = document.getElementById('texto_copia');
+        t.select();
+        document.execCommand('copy');
+        this.innerText='✅ ¡Copiado!';
+        setTimeout(() => this.innerText='📋 Copiar texto al portapapeles', 2000);
+    " style="
+        background:#16a34a;color:white;border:none;padding:8px 16px;
+        border-radius:6px;cursor:pointer;font-size:14px;margin-top:8px;
+    ">📋 Copiar texto al portapapeles</button>
+""", height=60)
 
 st.divider()
 st.caption("Panel basado en 'Secrets for Profiting in Bull and Bear Markets' de Stan Weinstein — capítulo 8.")
