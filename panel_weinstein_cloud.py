@@ -351,27 +351,23 @@ st.caption(
 )
 
 if not m2.empty:
-    m2_plot = m2[["fecha", "m2_billones", "m2_yoy_pct"]].copy()
-    stage_plot = stage[["fecha", "cierre"]].copy()
+    m2_plot = m2.copy()
     m2_plot["fecha"] = pd.to_datetime(m2_plot["fecha"])
+    stage_plot = stage[["fecha", "cierre"]].copy()
     stage_plot["fecha"] = pd.to_datetime(stage_plot["fecha"])
-
-    df_m2_sp = pd.merge(
-        m2_plot, stage_plot, on="fecha", how="outer"
-    ).sort_values("fecha")
 
     fig_m2 = make_subplots(specs=[[{"secondary_y": True}]])
 
     fig_m2.add_trace(
         go.Scatter(
-            x=df_m2_sp["fecha"], y=df_m2_sp["cierre"],
+            x=stage_plot["fecha"], y=stage_plot["cierre"],
             name="S&P 500", line=dict(color="#1e3a8a", width=2),
         ),
         secondary_y=False,
     )
     fig_m2.add_trace(
         go.Scatter(
-            x=df_m2_sp["fecha"], y=df_m2_sp["m2_billones"],
+            x=m2_plot["fecha"], y=m2_plot["m2_billones"],
             name="M2 USA (billones $)", line=dict(color="#f59e0b", width=2),
             hovertemplate="<b>%{x|%d %b %Y}</b><br>M2: %{y:.1f} B$<extra></extra>",
         ),
