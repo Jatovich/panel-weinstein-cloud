@@ -329,9 +329,9 @@ fecha_seleccionada = st.selectbox(
     index=0,
 )
 
-fecha_sel_dt = pd.Timestamp(fecha_seleccionada)
-amplitud_sel = amplitud[pd.to_datetime(amplitud["fecha"]) <= fecha_sel_dt].copy()
-stage_sel = stage[pd.to_datetime(stage["fecha"]) <= fecha_sel_dt].copy()
+fecha_sel_str = str(fecha_seleccionada)
+amplitud_sel = amplitud[amplitud["fecha"].astype(str) <= fecha_sel_str].copy()
+stage_sel = stage[stage["fecha"].astype(str) <= fecha_sel_str].copy()
 
 if amplitud_sel.empty or stage_sel.empty:
     st.warning("No hay datos suficientes para la semana seleccionada.")
