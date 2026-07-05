@@ -444,19 +444,6 @@ else:
         ">📋 Copiar texto al portapapeles</button>
     """, height=60)
 
-    etapa = int(us["etapa"]) if pd.notna(us["etapa"]) else None
-    nombres_etapa = {
-        1: "Etapa 1 (Base/Acumulación)",
-        2: "Etapa 2 (Avance/Tendencia alcista)",
-        3: "Etapa 3 (Techo/Distribución)",
-        4: "Etapa 4 (Declive/Tendencia bajista)",
-    }
-    etapa_txt = nombres_etapa.get(etapa, "etapa sin clasificar")
-
-    pct = float(ua["pct_sobre_media_30s"])
-    pct_delta = pct - float(ant["pct_sobre_media_30s"])
-    maximos = int(ua["nuevos_maximos_52s"])
-    minimos = int(ua["nuevos_minimos_52s"])
 
 st.divider()
 st.caption("Panel basado en 'Secrets for Profiting in Bull and Bear Markets' de Stan Weinstein — capítulo 8.")
