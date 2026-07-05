@@ -329,16 +329,12 @@ fecha_seleccionada = st.selectbox(
     index=0,
 )
 
-fecha_sel_str = str(fecha_seleccionada)
-amplitud_ord = amplitud.copy()
-amplitud_ord["fecha_str"] = amplitud_ord["fecha"].astype(str)
-amplitud_ord = amplitud_ord.sort_values("fecha_str").reset_index(drop=True)
-amplitud_sel = amplitud_ord[amplitud_ord["fecha_str"] <= fecha_sel_str].copy()
+fecha_sel_str = str(fecha_seleccionada)  # formato "2026-06-29"
+amplitud_ord = amplitud.sort_values("fecha").reset_index(drop=True).copy()
+amplitud_sel = amplitud_ord[amplitud_ord["fecha"].dt.strftime("%Y-%m-%d") <= fecha_sel_str].copy()
 
-stage_ord = stage.copy()
-stage_ord["fecha_str"] = stage_ord["fecha"].astype(str)
-stage_ord = stage_ord.sort_values("fecha_str").reset_index(drop=True)
-stage_sel = stage_ord[stage_ord["fecha_str"] <= fecha_sel_str].copy()
+stage_ord = stage.sort_values("fecha").reset_index(drop=True).copy()
+stage_sel = stage_ord[stage_ord["fecha"].dt.strftime("%Y-%m-%d") <= fecha_sel_str].copy()
 
 if amplitud_sel.empty or stage_sel.empty:
     st.warning("No hay datos suficientes para la semana seleccionada.")
