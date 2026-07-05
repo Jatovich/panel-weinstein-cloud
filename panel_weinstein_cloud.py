@@ -57,15 +57,18 @@ def cargar_datos():
     cliente = conectar_bigquery()
     tabla_amplitud = f"`{ID_PROYECTO_GCP}.{DATASET_BIGQUERY}.indicadores_amplitud`"
     tabla_stage = f"`{ID_PROYECTO_GCP}.{DATASET_BIGQUERY}.stage_indice`"
+    tabla_m2 = f"`{ID_PROYECTO_GCP}.{DATASET_BIGQUERY}.m2_liquidez`"
 
     amplitud = cliente.query(f"SELECT * FROM {tabla_amplitud} ORDER BY fecha").to_dataframe()
     stage = cliente.query(
         f"SELECT * FROM {tabla_stage} WHERE indice = 'SP500' ORDER BY fecha"
     ).to_dataframe()
+    m2 = cliente.query(f"SELECT * FROM {tabla_m2} ORDER BY fecha").to_dataframe()
 
     amplitud["fecha"] = pd.to_datetime(amplitud["fecha"])
     stage["fecha"] = pd.to_datetime(stage["fecha"])
-    return amplitud, stage
+    m2["fecha"] = pd.to_datetime(m2["fecha"])
+    return amplitud, stage, m2
 
 
 # ------------------------------------------------------------------
@@ -75,11 +78,14 @@ st.set_page_config(page_title="Panel Weinstein", page_icon="📈", layout="wide"
 st.title("📈 Panel de Mercado — Método Weinstein")
 st.caption("S&P 500 · Indicadores de amplitud del capítulo 8")
 
-amplitud, stage = cargar_datos()
+amplitud, stage, m2 = cargar_datos()
 
 if amplitud.empty or stage.empty:
     st.warning("Todavía no hay datos sincronizados en BigQuery. Vuelve a intentarlo más tarde.")
     st.stop()
+
+ultima_m2 = m2.iloc[-1] if not m2.empty else None
+anterior_m2 = m2.iloc[-2] if len(m2) > 1 else ultima_m2
 
 ultima_amplitud = amplitud.iloc[-1]
 ultima_stage = stage.iloc[-1]
@@ -89,7 +95,7 @@ anterior_amplitud = amplitud.iloc[-2] if len(amplitud) > 1 else ultima_amplitud
 # ------------------------------------------------------------------
 # CABECERA: "de un vistazo"
 # ------------------------------------------------------------------
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 etapa_actual = ultima_stage["etapa"]
 etapa_texto = NOMBRES_ETAPA.get(etapa_actual, "Sin clasificar (media plana)")
@@ -145,6 +151,24 @@ with col4:
         st.markdown(f"**Tendencia 5s:** {tendencia_txt}")
     if divergencia:
         st.warning("⚠️ Divergencia: índice y A/D van en sentido contrario")
+
+with col5:
+    st.markdown("**Liquidez M2 (USA)**")
+    if ultima_m2 is not None:
+        yoy = float(ultima_m2["m2_yoy_pct"]) if pd.notna(ultima_m2["m2_yoy_pct"]) else None
+        tendencia_m2 = str(ultima_m2["tendencia"]) if pd.notna(ultima_m2["tendencia"]) else "—"
+        m2_val = float(ultima_m2["m2_billones"])
+        color_m2 = "#16a34a" if (yoy is not None and yoy > 0) else "#dc2626"
+        tendencia_emoji = "↑" if tendencia_m2 == "SUBIENDO" else ("↓" if tendencia_m2 == "BAJANDO" else "→")
+        yoy_txt = f"{yoy:+.1f}%" if yoy is not None else "N/D"
+        st.markdown(
+            f"<h3 style='color:{color_m2}'>{yoy_txt} YoY</h3>",
+            unsafe_allow_html=True,
+        )
+        st.caption(f"{tendencia_emoji} {tendencia_m2.capitalize()} · {m2_val:.1f} B$")
+        st.caption(f"Dato a: {ultima_m2['fecha'].date()}")
+    else:
+        st.caption("Sin datos de M2 todavía")
 
 st.caption(f"Datos a fecha de la última semana cargada: {ultima_amplitud['fecha'].date()}")
 st.divider()
@@ -312,8 +336,49 @@ st.plotly_chart(fig_combo, use_container_width=True)
 st.divider()
 
 # ------------------------------------------------------------------
-# ANÁLISIS SEMANAL AUTOMÁTICO (con selector de semana histórica)
+# GRÁFICO 5: M2 (liquidez USA) vs. precio del S&P 500
 # ------------------------------------------------------------------
+st.subheader("Liquidez M2 (USA) vs. S&P 500")
+st.caption(
+    "La expansión del M2 (dinero en circulación) tiende a preceder o acompañar "
+    "las subidas del mercado; su contracción suele anticipar correcciones. "
+    "Observa la correlación entre ambas líneas y, especialmente, las divergencias."
+)
+
+if not m2.empty:
+    df_m2_sp = pd.merge(
+        m2[["fecha", "m2_billones", "m2_yoy_pct"]],
+        stage[["fecha", "cierre"]],
+        on="fecha", how="outer"
+    ).sort_values("fecha")
+
+    fig_m2 = make_subplots(specs=[[{"secondary_y": True}]])
+
+    fig_m2.add_trace(
+        go.Scatter(
+            x=df_m2_sp["fecha"], y=df_m2_sp["cierre"],
+            name="S&P 500", line=dict(color="#1e3a8a", width=2),
+        ),
+        secondary_y=False,
+    )
+    fig_m2.add_trace(
+        go.Scatter(
+            x=df_m2_sp["fecha"], y=df_m2_sp["m2_billones"],
+            name="M2 USA (billones $)", line=dict(color="#f59e0b", width=2),
+            hovertemplate="<b>%{x|%d %b %Y}</b><br>M2: %{y:.1f} B$<extra></extra>",
+        ),
+        secondary_y=True,
+    )
+
+    fig_m2.update_yaxes(title_text="S&P 500 (puntos)", secondary_y=False)
+    fig_m2.update_yaxes(title_text="M2 USA (billones $)", secondary_y=True)
+    fig_m2.update_layout(
+        height=380, hovermode="x unified",
+        legend=dict(orientation="h", y=-0.2),
+    )
+    st.plotly_chart(fig_m2, use_container_width=True)
+else:
+    st.info("Los datos de M2 se cargarán en la próxima actualización semanal.")
 st.subheader("📋 Análisis semanal")
 st.caption("Texto generado automáticamente a partir de los datos. Puedes copiarlo y adaptarlo para tu newsletter o grupo de Telegram.")
 
@@ -339,7 +404,7 @@ stage_sel = stage_ord[stage_ord["fecha"].dt.strftime("%Y-%m-%d") <= fecha_sel_st
 if amplitud_sel.empty or stage_sel.empty:
     st.warning("No hay datos suficientes para la semana seleccionada.")
 else:
-    def generar_analisis(amplitud, stage) -> str:
+    def generar_analisis(amplitud, stage, m2=None) -> str:
         ua = amplitud.iloc[-1]
         ant = amplitud.iloc[-2] if len(amplitud) > 1 else ua
         us = stage.iloc[-1]
@@ -427,9 +492,32 @@ else:
                 p4 += (" ⚠️ **Atención:** el índice baja pero la línea A/D sigue subiendo — "
                        "divergencia alcista que puede indicar que la caída no tiene respaldo interno.")
 
-        return "\n\n".join([p1, p2, p3, p4])
+        # --- Párrafo 5: M2 liquidez ---
+        p5 = ""
+        if m2 is not None and not m2.empty:
+            um2 = m2.iloc[-1]
+            yoy = float(um2["m2_yoy_pct"]) if pd.notna(um2["m2_yoy_pct"]) else None
+            tendencia_m2 = str(um2["tendencia"]) if pd.notna(um2["tendencia"]) else None
+            if yoy is not None:
+                if yoy > 5:
+                    lectura_m2 = "expansión significativa de liquidez, contexto históricamente favorable para la renta variable"
+                elif yoy > 0:
+                    lectura_m2 = "leve expansión de liquidez, contexto neutral-positivo"
+                elif yoy > -3:
+                    lectura_m2 = "ligera contracción de liquidez, contexto de cautela"
+                else:
+                    lectura_m2 = "contracción notable de liquidez, contexto históricamente desfavorable para la renta variable"
+                p5 = (f"**Liquidez M2 (USA):** la oferta monetaria crece a un ritmo del {yoy:+.1f}% "
+                      f"interanual y su tendencia reciente es {tendencia_m2.lower() if tendencia_m2 else 'indeterminada'}, "
+                      f"lo que señala una {lectura_m2}.")
 
-    texto_analisis = generar_analisis(amplitud_sel, stage_sel)
+        parrafos = [p1, p2, p3, p4]
+        if p5:
+            parrafos.append(p5)
+        return "\n\n".join(parrafos)
+
+    m2_sel = m2[m2["fecha"].dt.strftime("%Y-%m-%d") <= fecha_sel_str].copy() if not m2.empty else m2
+    texto_analisis = generar_analisis(amplitud_sel, stage_sel, m2_sel)
     st.markdown(texto_analisis)
 
     texto_plano = texto_analisis.replace("**", "").replace("⚠️ ", "")

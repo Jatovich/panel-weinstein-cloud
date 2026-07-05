@@ -33,3 +33,9 @@ jobs:
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
         run: python 03_calcular_indicadores_cloud.py
+
+      - name: Descargar M2 (liquidez USA)
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: python 07_descargar_m2_cloud.py
