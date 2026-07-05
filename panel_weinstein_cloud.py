@@ -63,11 +63,16 @@ def cargar_datos():
     stage = cliente.query(
         f"SELECT * FROM {tabla_stage} WHERE indice = 'SP500' ORDER BY fecha"
     ).to_dataframe()
-    m2 = cliente.query(f"SELECT * FROM {tabla_m2} ORDER BY fecha").to_dataframe()
+
+    # La tabla M2 puede no existir todavía si el workflow aún no la ha creado
+    try:
+        m2 = cliente.query(f"SELECT * FROM {tabla_m2} ORDER BY fecha").to_dataframe()
+        m2["fecha"] = pd.to_datetime(m2["fecha"])
+    except Exception:
+        m2 = pd.DataFrame()
 
     amplitud["fecha"] = pd.to_datetime(amplitud["fecha"])
     stage["fecha"] = pd.to_datetime(stage["fecha"])
-    m2["fecha"] = pd.to_datetime(m2["fecha"])
     return amplitud, stage, m2
 
 
@@ -346,10 +351,13 @@ st.caption(
 )
 
 if not m2.empty:
+    m2_plot = m2[["fecha", "m2_billones", "m2_yoy_pct"]].copy()
+    stage_plot = stage[["fecha", "cierre"]].copy()
+    m2_plot["fecha"] = pd.to_datetime(m2_plot["fecha"])
+    stage_plot["fecha"] = pd.to_datetime(stage_plot["fecha"])
+
     df_m2_sp = pd.merge(
-        m2[["fecha", "m2_billones", "m2_yoy_pct"]],
-        stage[["fecha", "cierre"]],
-        on="fecha", how="outer"
+        m2_plot, stage_plot, on="fecha", how="outer"
     ).sort_values("fecha")
 
     fig_m2 = make_subplots(specs=[[{"secondary_y": True}]])
