@@ -140,6 +140,13 @@ def fusionar_precios_en_bigquery(cliente: bigquery.Client, df_nuevo: pd.DataFram
     if df_nuevo.empty:
         return
 
+    # Forzar volumen a entero nullable: pandas lo convierte a FLOAT64 cuando
+    # hay NaN, pero BigQuery lo tiene definido como INT64 y rechaza el MERGE.
+    # pd.Int64Dtype() es el tipo entero de pandas que acepta valores nulos.
+    if "volumen" in df_nuevo.columns:
+        df_nuevo = df_nuevo.copy()
+        df_nuevo["volumen"] = df_nuevo["volumen"].astype("Int64")
+
     tabla_principal = f"{ID_PROYECTO_GCP}.{DATASET_BIGQUERY}.precios_semanales"
     tabla_staging = f"{ID_PROYECTO_GCP}.{DATASET_BIGQUERY}.precios_semanales_staging"
 
