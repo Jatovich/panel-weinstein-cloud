@@ -41,10 +41,6 @@ jobs:
         run: python 07_descargar_m2_cloud.py
         
       - name: Screener momentum
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
         run: python screener.py
-
-      - name: Clonar el repositorio
-        uses: actions/checkout@v5
-
-      - name: Configurar Python
-        uses: actions/setup-python@v6
