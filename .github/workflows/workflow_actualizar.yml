@@ -42,3 +42,9 @@ jobs:
         
       - name: Screener momentum
         run: python screener.py
+
+      - name: Clonar el repositorio
+        uses: actions/checkout@v5
+
+      - name: Configurar Python
+        uses: actions/setup-python@v6
