@@ -66,6 +66,7 @@ TABLA_ETAPAS = None
 # Tablas de salida.
 TABLA_CANDIDATOS = f"{PROYECTO}.{DATASET}.screener_candidatos"
 TABLA_SECTORES = f"{PROYECTO}.{DATASET}.sectores_rs"
+TABLA_ETFS = f"{PROYECTO}.{DATASET}.etfs_semanales"
 
 # Umbrales del embudo.
 PRECIO_MIN = 8.0
@@ -243,6 +244,24 @@ def cargar_etapas(cliente: bigquery.Client) -> pd.DataFrame:
         log.warning("No se pudo leer etapas (%s); se continúa sin cruce.", exc)
         return pd.DataFrame(columns=["ticker", "etapa"])
 
+def guardar_etfs(cliente: bigquery.Client, idx_w: pd.Series,
+                 etfs_w: dict[str, pd.Series]) -> None:
+    """Series semanales de los ETFs sectoriales + índice, para la gráfica
+    de evolución del panel. Se reescribe entera en cada pasada."""
+    filas = []
+    series = {"S&P 500": idx_w, **etfs_w}
+    for sector, serie in series.items():
+        df = serie.rename("cierre").reset_index()
+        df.columns = ["fecha", "cierre"]
+        df["sector"] = sector
+        filas.append(df)
+    df_total = pd.concat(filas, ignore_index=True)
+    job = cliente.load_table_from_dataframe(
+        df_total, TABLA_ETFS,
+        job_config=bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE"),
+    )
+    job.result()
+    log.info("Guardadas %d filas en %s.", len(df_total), TABLA_ETFS)
 
 # ---------------------------------------------------------------------------
 # Cálculo del embudo
@@ -388,6 +407,7 @@ def main() -> int:
 
     guardar(cliente, candidatos, TABLA_CANDIDATOS, fecha_calculo)
     guardar(cliente, sectores, TABLA_SECTORES, fecha_calculo)
+    guardar_etfs(cliente, idx_w, etfs_w)
 
     finalistas = candidatos[candidatos["pasa_todo"]] if not candidatos.empty else candidatos
     log.info("Resumen semanal: %d candidatos F1-F3, de ellos %d finalistas (F4).",

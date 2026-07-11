@@ -156,11 +156,26 @@ c3.metric("Finalistas (F4)", len(finalistas))
 c4.metric("Sala de espera", len(sala_espera),
           help="Pasan liquidez, retorno y fuerza relativa, pero el RSI "
                "está fuera de la zona 40-65: fuertes pero extendidos.")
+with st.expander("¿Qué significa cada filtro?"):
+    st.markdown("""
+| Filtro | Criterio | Qué busca |
+|---|---|---|
+| **F1 · Liquidez** | Precio > 8$ y volumen medio 20 sesiones > 1M | Valores donde operan institucionales |
+| **F2 · Retorno absoluto** | +25% en 100 sesiones y +50% en 200 | Tendencia alcista consolidada (Etapa 2) |
+| **F3 · Fuerza relativa (RS)** | Batir al S&P 500 en +15% a 6 meses y +30% a 3 | **Aceleración** frente al mercado, no solo fortaleza |
+| **F4 · RSI 40-65** | Oscilador de Wilder en zona neutra | El descanso: consolidación tras el impulso, ni caída libre ni sobrecompra |
+
+**Finalista** = pasa los cuatro. **Sala de espera** = pasa F1-F3 pero su RSI está fuera de zona: fuerte pero extendido; puede entrar en zona las próximas semanas.
+
+*Ojo: F3 (RS, fuerza relativa contra el índice) y F4 (RSI, oscilador) son cosas distintas pese al nombre parecido.*
+""")
 
 st.divider()
 
 # --- 2. Panel sectorial -----------------------------------------------------
 st.subheader("Sectores por fuerza relativa Mansfield")
+
+hueco_grafica = st.container()   # la gráfica irá aquí, sobre los toggles
 
 conteo_sector = candidatos.groupby("sector")["ticker"].count()
 
@@ -183,6 +198,49 @@ for i, (_, row) in enumerate(sectores.iterrows()):
     )
 
 activos = [s for s, v in st.session_state.sectores_activos.items() if v]
+
+# --- Gráfica de evolución (base 100), reactiva a los toggles ---------------
+def cargar_etfs_semanales() -> pd.DataFrame:
+    try:
+        df = consultar(f"SELECT fecha, sector, cierre "
+                       f"FROM `{PROYECTO}.{DATASET}.etfs_semanales` "
+                       f"ORDER BY fecha")
+        df["fecha"] = pd.to_datetime(df["fecha"])
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+evol = cargar_etfs_semanales()
+with hueco_grafica:
+    if evol.empty:
+        st.info("La gráfica de evolución se activará tras la próxima pasada "
+                "del screener (requiere la tabla etfs_semanales).")
+    else:
+        ventana = st.radio("Ventana", ["6 meses", "1 año", "2 años"],
+                           index=1, horizontal=True)
+        semanas = {"6 meses": 26, "1 año": 52, "2 años": 104}[ventana]
+        corte = evol["fecha"].max() - pd.Timedelta(weeks=semanas)
+        vista_evol = evol[evol["fecha"] >= corte]
+
+        fig_evol = go.Figure()
+        for sector in ["S&P 500"] + activos:
+            serie = vista_evol[vista_evol["sector"] == sector]
+            if serie.empty:
+                continue
+            base = serie["cierre"].iloc[0]
+            fig_evol.add_trace(go.Scatter(
+                x=serie["fecha"], y=serie["cierre"] / base * 100,
+                name=sector,
+                line=dict(width=3.5, color="#444444", dash="dot")
+                     if sector == "S&P 500" else dict(width=1.8),
+            ))
+        fig_evol.update_layout(
+            height=380, yaxis_title="Base 100",
+            legend=dict(orientation="h", y=-0.15),
+            margin=dict(t=10, b=10),
+        )
+        st.plotly_chart(fig_evol, use_container_width=True)
+        
 
 # --- 3. Tabla de candidatos --------------------------------------------------
 st.subheader("Candidatos")
