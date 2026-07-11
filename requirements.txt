@@ -2,10 +2,11 @@ streamlit
 pandas
 plotly
 google-cloud-bigquery
+google-cloud-bigquery-storage
 db-dtypes
 pyarrow
 requests
 beautifulsoup4
 lxml
-yfinance
+yfinance==1.4.1
 numpy
