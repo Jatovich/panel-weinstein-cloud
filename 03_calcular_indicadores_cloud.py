@@ -22,6 +22,7 @@ VENTANA_MEDIA = 30
 VENTANA_52S = 52
 VENTANA_VOLUMEN = 10
 UMBRAL_VOLUMEN_RUPTURA = 1.3
+UNIVERSO_MINIMO = 400
 
 
 def conectar_bigquery() -> bigquery.Client:
@@ -40,6 +41,16 @@ def cargar_precios(cliente: bigquery.Client) -> pd.DataFrame:
 # --- Misma lógica de cálculo que la versión MariaDB ---
 def calcular_indicadores_amplitud(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["ticker", "fecha"]).copy()
+
+    # Guardarraíl: descartar fechas con universo incompleto. Una semana con
+    # pocos tickers produce indicadores basura (0.0%, saldos absurdos) y
+    # contaminaría la línea A/D acumulada.
+    conteo = df.groupby("fecha")["ticker"].transform("count")
+    fechas_malas = df.loc[conteo < UNIVERSO_MINIMO, "fecha"].unique()
+    if len(fechas_malas):
+        print(f"  [AVISO] Descartadas fechas con universo < {UNIVERSO_MINIMO}: "
+              f"{sorted(pd.to_datetime(fechas_malas).strftime('%Y-%m-%d'))}")
+    df = df[conteo >= UNIVERSO_MINIMO].copy()
 
     df["media_30s"] = df.groupby("ticker")["cierre"].transform(
         lambda s: s.rolling(VENTANA_MEDIA, min_periods=VENTANA_MEDIA).mean()

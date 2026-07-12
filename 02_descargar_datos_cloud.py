@@ -105,11 +105,16 @@ def descargar_lote_precios(tickers: list[str], fecha_inicio: str | None = None) 
                 "Date": "fecha", "Open": "apertura", "High": "maximo",
                 "Low": "minimo", "Close": "cierre", "Volume": "volumen",
             })
-            df_ticker["fecha"] = pd.to_datetime(df_ticker["fecha"]).dt.date
+            fechas = pd.to_datetime(df_ticker["fecha"])
+            # Vacuna: forzar la etiqueta de toda barra semanal al LUNES de
+            # su semana (yfinance a veces etiqueta algún ticker en otro día,
+            # creando fechas huérfanas).
+            fechas = fechas - pd.to_timedelta(fechas.dt.weekday, unit="D")
+            df_ticker["fecha"] = fechas.dt.date
             df_ticker["ticker"] = ticker
             resultado[ticker] = df_ticker[
                 ["ticker", "fecha", "apertura", "maximo", "minimo", "cierre", "volumen"]
-            ].dropna(subset=["cierre"])
+            ].dropna(subset=["cierre"]).drop_duplicates(subset=["fecha"], keep="last")
         except (KeyError, TypeError):
             continue
     return resultado
