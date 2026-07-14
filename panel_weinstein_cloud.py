@@ -75,6 +75,20 @@ def cargar_datos():
     stage["fecha"] = pd.to_datetime(stage["fecha"])
     return amplitud, stage, m2
 
+@st.cache_data(ttl=3600)
+def cargar_putcall() -> pd.DataFrame:
+    """Serie del put/call del SPY. Vacío si la tabla aún no existe."""
+    cliente = conectar_bigquery()
+    try:
+        df = cliente.query(
+            f"SELECT fecha, pc_ratio_vol, pc_ratio_oi "
+            f"FROM `{ID_PROYECTO_GCP}.{DATASET_BIGQUERY}.putcall_indice` "
+            f"ORDER BY fecha"
+        ).to_dataframe()
+        df["fecha"] = pd.to_datetime(df["fecha"])
+        return df
+    except Exception:
+        return pd.DataFrame()
 
 # ------------------------------------------------------------------
 # Configuración de página
@@ -84,6 +98,7 @@ st.title("📈 Panel de Mercado — Método Weinstein")
 st.caption("S&P 500 · Indicadores de amplitud del capítulo 8")
 
 amplitud, stage, m2 = cargar_datos()
+putcall = cargar_putcall()
 
 if amplitud.empty or stage.empty:
     st.warning("Todavía no hay datos sincronizados en BigQuery. Vuelve a intentarlo más tarde.")
@@ -100,7 +115,7 @@ anterior_amplitud = amplitud.iloc[-2] if len(amplitud) > 1 else ultima_amplitud
 # ------------------------------------------------------------------
 # CABECERA: "de un vistazo"
 # ------------------------------------------------------------------
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4, col5, col6 = st.columns(6)
 
 etapa_actual = ultima_stage["etapa"]
 etapa_texto = NOMBRES_ETAPA.get(etapa_actual, "Sin clasificar (media plana)")
@@ -174,6 +189,23 @@ with col5:
         st.caption(f"Dato a: {ultima_m2['fecha'].date()}")
     else:
         st.caption("Sin datos de M2 todavía")
+with col6:
+    if not putcall.empty:
+        actual = putcall.iloc[-1]
+        delta = (float(actual["pc_ratio_vol"]) - float(putcall.iloc[-2]["pc_ratio_vol"])
+                 if len(putcall) > 1 else None)
+        st.metric(
+            "Put/Call SPY (vol)",
+            f"{actual['pc_ratio_vol']:.2f}",
+            delta=f"{delta:+.2f}" if delta is not None else None,
+            delta_color="inverse",
+            help=("Sentimiento con lectura contraria: muy alto = miedo "
+                  "(cobertura masiva, típico de suelos); muy bajo = "
+                  "complacencia. Vencimientos ≤ 90 días."),
+        )
+    else:
+        st.markdown("**Put/Call SPY**")
+        st.caption("Sin datos todavía")
 
 st.caption(f"Datos a fecha de la última semana cargada: {ultima_amplitud['fecha'].date()}")
 st.divider()
@@ -202,7 +234,7 @@ for etapa_num, color in COLOR_ETAPA.items():
             name=NOMBRES_ETAPA[etapa_num], showlegend=True,
         ))
 fig_precio.update_layout(height=420, hovermode="x unified", legend=dict(orientation="h", y=-0.2))
-st.plotly_chart(fig_precio, use_container_width=True)
+st.plotly_chart(fig_precio, width="stretch")
 
 
 # ------------------------------------------------------------------
@@ -219,7 +251,7 @@ fig_pct.add_trace(go.Scatter(
 fig_pct.add_hline(y=70, line_dash="dash", line_color="#dc2626", annotation_text="Sobrecompra (70%)")
 fig_pct.add_hline(y=30, line_dash="dash", line_color="#dc2626", annotation_text="Sobreventa (30%)")
 fig_pct.update_layout(height=350, yaxis_range=[0, 100])
-st.plotly_chart(fig_pct, use_container_width=True)
+st.plotly_chart(fig_pct, width="stretch")
 
 
 # ------------------------------------------------------------------
@@ -237,7 +269,7 @@ fig_hl.add_trace(go.Bar(
     name="Nuevos mínimos", marker_color="#dc2626",
 ))
 fig_hl.update_layout(height=320, barmode="relative", bargap=0.1)
-st.plotly_chart(fig_hl, use_container_width=True)
+st.plotly_chart(fig_hl, width="stretch")
 
 
 # ------------------------------------------------------------------
@@ -336,7 +368,7 @@ for i in range(1, len(valores_ad)):
 fig_combo.update_yaxes(title_text="Precio S&P 500", secondary_y=False)
 fig_combo.update_yaxes(title_text="Línea Avance/Declive", secondary_y=True)
 fig_combo.update_layout(height=420, hovermode="x", legend=dict(orientation="h", y=-0.2))
-st.plotly_chart(fig_combo, use_container_width=True)
+st.plotly_chart(fig_combo, width="stretch")
 
 st.divider()
 
@@ -380,9 +412,28 @@ if not m2.empty:
         height=380, hovermode="x unified",
         legend=dict(orientation="h", y=-0.2),
     )
-    st.plotly_chart(fig_m2, use_container_width=True)
+    st.plotly_chart(fig_m2, width="stretch")
 else:
     st.info("Los datos de M2 se cargarán en la próxima actualización semanal.")
+
+# ------------------------------------------------------------------
+# GRÁFICO 6: Put/Call ratio del SPY
+# ------------------------------------------------------------------
+st.subheader("Put/Call ratio del SPY")
+st.caption("Serie propia, un punto por semana desde julio 2026. "
+           "Lectura contraria en extremos: picos = miedo, valles = complacencia.")
+
+if not putcall.empty:
+    fig_pc = go.Figure()
+    fig_pc.add_trace(go.Scatter(x=putcall["fecha"], y=putcall["pc_ratio_vol"],
+                                name="Por volumen", mode="lines+markers"))
+    fig_pc.add_trace(go.Scatter(x=putcall["fecha"], y=putcall["pc_ratio_oi"],
+                                name="Por open interest", mode="lines+markers",
+                                line=dict(dash="dot")))
+    fig_pc.update_layout(height=320, legend=dict(orientation="h", y=1.05))
+    st.plotly_chart(fig_pc, width="stretch")
+else:
+    st.info("La serie se irá construyendo con cada pasada semanal del screener.")    
 st.subheader("📋 Análisis semanal")
 st.caption("Texto generado automáticamente a partir de los datos. Puedes copiarlo y adaptarlo para tu newsletter o grupo de Telegram.")
 

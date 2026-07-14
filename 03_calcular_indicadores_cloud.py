@@ -45,6 +45,10 @@ def calcular_indicadores_amplitud(df: pd.DataFrame) -> pd.DataFrame:
     # Guardarraíl: descartar fechas con universo incompleto. Una semana con
     # pocos tickers produce indicadores basura (0.0%, saldos absurdos) y
     # contaminaría la línea A/D acumulada.
+    # Solo semanas cerradas: descartar la semana en curso (etiqueta-lunes actual).
+    lunes_actual = (pd.Timestamp.today().normalize()
+                    - pd.Timedelta(days=pd.Timestamp.today().weekday()))
+    df = df[df["fecha"] < lunes_actual]
     conteo = df.groupby("fecha")["ticker"].transform("count")
     fechas_malas = df.loc[conteo < UNIVERSO_MINIMO, "fecha"].unique()
     if len(fechas_malas):
@@ -109,6 +113,11 @@ def calcular_stage_indice(ticker_indice: str = "^GSPC", nombre_guardado: str = "
     datos["fecha"] = pd.to_datetime(datos["fecha"])
     if isinstance(datos.columns, pd.MultiIndex):
         datos.columns = [c[0] for c in datos.columns]
+
+    # Solo semanas cerradas: descartar la barra de la semana en curso.
+    lunes_actual = (pd.Timestamp.today().normalize()
+                    - pd.Timedelta(days=pd.Timestamp.today().weekday()))
+    datos = datos[datos["fecha"] < lunes_actual]
 
     datos["media_30s"] = datos["cierre"].rolling(VENTANA_MEDIA, min_periods=VENTANA_MEDIA).mean()
     media_previa = datos["media_30s"].shift(2)

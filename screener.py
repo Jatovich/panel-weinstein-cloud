@@ -11,8 +11,9 @@ Embudo de filtros (sobre datos diarios):
   F3  Exceso de retorno vs S&P 500:  > +15% a 6 meses  y  > +30% a 3 meses
       (valores corregidos según la diapositiva original: exige ACELERACIÓN)
   F4  RSI(14) entre 40 y 65 (zona de consolidación)
-  F5  Put/Call ratio — omitido deliberadamente (no replicable con yfinance
-      de forma fiable; consultar a mano solo para los finalistas)
+  F5  Put/Call ratio (informativo, no filtra) — ratio ≤ 0.5 con 5.000+
+      contratos marca senal_pc; además se guarda el put/call del SPY
+      como termómetro de sentimiento del índice (tabla putcall_indice)
 
 Además:
   - Mansfield RS semanal de los 11 sectores GICS (ETFs SPDR) → tabla sectores_rs
@@ -67,6 +68,7 @@ TABLA_ETAPAS = None
 TABLA_CANDIDATOS = f"{PROYECTO}.{DATASET}.screener_candidatos"
 TABLA_SECTORES = f"{PROYECTO}.{DATASET}.sectores_rs"
 TABLA_ETFS = f"{PROYECTO}.{DATASET}.etfs_semanales"
+TABLA_PC_INDICE = f"{PROYECTO}.{DATASET}.putcall_indice"
 
 # Umbrales del embudo.
 PRECIO_MIN = 8.0
@@ -250,24 +252,7 @@ def cargar_etapas(cliente: bigquery.Client) -> pd.DataFrame:
         log.warning("No se pudo leer etapas (%s); se continúa sin cruce.", exc)
         return pd.DataFrame(columns=["ticker", "etapa"])
 
-def guardar_etfs(cliente: bigquery.Client, idx_w: pd.Series,
-                 etfs_w: dict[str, pd.Series]) -> None:
-    """Series semanales de los ETFs sectoriales + índice, para la gráfica
-    de evolución del panel. Se reescribe entera en cada pasada."""
-    filas = []
-    series = {"S&P 500": idx_w, **etfs_w}
-    for sector, serie in series.items():
-        df = serie.rename("cierre").reset_index()
-        df.columns = ["fecha", "cierre"]
-        df["sector"] = sector
-        filas.append(df)
-    df_total = pd.concat(filas, ignore_index=True)
-    job = cliente.load_table_from_dataframe(
-        df_total, TABLA_ETFS,
-        job_config=bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE"),
-    )
-    job.result()
-    log.info("Guardadas %d filas en %s.", len(df_total), TABLA_ETFS)
+
 
 # ---------------------------------------------------------------------------
 # Cálculo del embudo
@@ -393,7 +378,25 @@ def guardar(cliente: bigquery.Client, df: pd.DataFrame, tabla: str,
     )
     job.result()
     log.info("Guardadas %d filas en %s.", len(df), tabla)
-
+    
+def guardar_etfs(cliente: bigquery.Client, idx_w: pd.Series,
+                 etfs_w: dict[str, pd.Series]) -> None:
+    """Series semanales de los ETFs sectoriales + índice, para la gráfica
+    de evolución del panel. Se reescribe entera en cada pasada."""
+    filas = []
+    series = {"S&P 500": idx_w, **etfs_w}
+    for sector, serie in series.items():
+        df = serie.rename("cierre").reset_index()
+        df.columns = ["fecha", "cierre"]
+        df["sector"] = sector
+        filas.append(df)
+    df_total = pd.concat(filas, ignore_index=True)
+    job = cliente.load_table_from_dataframe(
+        df_total, TABLA_ETFS,
+        job_config=bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE"),
+    )
+    job.result()
+    log.info("Guardadas %d filas en %s.", len(df_total), TABLA_ETFS)
 
 # -------------------------------------------------------------------------
 # Ratios Put/Call
@@ -460,7 +463,10 @@ def main() -> int:
             (candidatos["pc_ratio_vol"] <= PC_RATIO_UMBRAL)
             & (candidatos["vol_opciones"] >= PC_VOLUMEN_MIN)
         )
-
+    log.info("Consultando put/call del índice (SPY)...")
+    pc_indice = calcular_put_call(["SPY"])
+    pc_indice["fecha"] = fecha_calculo
+    guardar(cliente, pc_indice, TABLA_PC_INDICE, fecha_calculo)
     guardar(cliente, candidatos, TABLA_CANDIDATOS, fecha_calculo)
     guardar(cliente, sectores, TABLA_SECTORES, fecha_calculo)
     guardar_etfs(cliente, idx_w, etfs_w)
