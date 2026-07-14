@@ -95,6 +95,12 @@ ETFS_SECTORIALES = {
     "Materials": "XLB",
 }
 
+# VARIABLES PARA OPCIONES
+DIAS_VENCIMIENTO_MAX = 90     # ventana de vencimientos para el put/call
+PC_RATIO_UMBRAL = 0.5         # umbral informativo (Leyguarda)
+PC_VOLUMEN_MIN = 5000         # contratos mínimos para significancia
+
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("screener")
 
@@ -378,10 +384,52 @@ def guardar(cliente: bigquery.Client, df: pd.DataFrame, tabla: str,
         log.info("Tabla %s aún no existe; se creará al cargar.", tabla)
     job = cliente.load_table_from_dataframe(
         df, tabla,
-        job_config=bigquery.LoadJobConfig(write_disposition="WRITE_APPEND"),
+        job_config=bigquery.LoadJobConfig(
+            write_disposition="WRITE_APPEND",
+            schema_update_options=[
+                bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION
+            ],
+        ),
     )
     job.result()
     log.info("Guardadas %d filas en %s.", len(df), tabla)
+
+
+# -------------------------------------------------------------------------
+# Ratios Put/Call
+# -------------------------------------------------------------------------
+
+def calcular_put_call(tickers: list[str]) -> pd.DataFrame:
+    """Put/Call ratio (volumen y open interest) agregando los vencimientos
+    de los próximos DIAS_VENCIMIENTO_MAX días. Solo para los candidatos
+    (pocas peticiones). Devuelve NaN donde Yahoo no dé datos."""
+    import time
+    from datetime import datetime, timedelta
+
+    limite = datetime.now() + timedelta(days=DIAS_VENCIMIENTO_MAX)
+    filas = []
+    for t in tickers:
+        vol_call = vol_put = oi_call = oi_put = 0
+        try:
+            tk = yf.Ticker(t)
+            vencimientos = [v for v in tk.options
+                            if datetime.strptime(v, "%Y-%m-%d") <= limite]
+            for v in vencimientos:
+                cadena = tk.option_chain(v)
+                vol_call += cadena.calls["volume"].fillna(0).sum()
+                vol_put += cadena.puts["volume"].fillna(0).sum()
+                oi_call += cadena.calls["openInterest"].fillna(0).sum()
+                oi_put += cadena.puts["openInterest"].fillna(0).sum()
+            time.sleep(0.5)
+        except Exception as exc:
+            log.warning("Sin datos de opciones para %s (%s).", t, exc)
+        filas.append({
+            "ticker": t,
+            "pc_ratio_vol": round(vol_put / vol_call, 2) if vol_call else np.nan,
+            "pc_ratio_oi": round(oi_put / oi_call, 2) if oi_call else np.nan,
+            "vol_opciones": int(vol_call + vol_put),
+        })
+    return pd.DataFrame(filas)
 
 
 # ---------------------------------------------------------------------------
@@ -404,10 +452,19 @@ def main() -> int:
 
     candidatos = calcular_screener(precios, componentes, idx_d, etapas, fecha_calculo)
     sectores = calcular_sectores(idx_w, etfs_w, fecha_calculo)
+    if not candidatos.empty:
+        log.info("Consultando opciones de %d candidatos...", len(candidatos))
+        pc = calcular_put_call(candidatos["ticker"].tolist())
+        candidatos = candidatos.merge(pc, on="ticker", how="left")
+        candidatos["senal_pc"] = (
+            (candidatos["pc_ratio_vol"] <= PC_RATIO_UMBRAL)
+            & (candidatos["vol_opciones"] >= PC_VOLUMEN_MIN)
+        )
 
     guardar(cliente, candidatos, TABLA_CANDIDATOS, fecha_calculo)
     guardar(cliente, sectores, TABLA_SECTORES, fecha_calculo)
     guardar_etfs(cliente, idx_w, etfs_w)
+
 
     finalistas = candidatos[candidatos["pasa_todo"]] if not candidatos.empty else candidatos
     log.info("Resumen semanal: %d candidatos F1-F3, de ellos %d finalistas (F4).",
@@ -419,3 +476,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

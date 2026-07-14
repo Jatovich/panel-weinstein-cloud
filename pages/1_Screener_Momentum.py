@@ -166,6 +166,7 @@ with st.expander("¿Qué significa cada filtro?"):
 | **F4 · RSI 40-65** | Oscilador de Wilder en zona neutra | El descanso: consolidación tras el impulso, ni caída libre ni sobrecompra |
 
 **Finalista** = pasa los cuatro. **Sala de espera** = pasa F1-F3 pero su RSI está fuera de zona: fuerte pero extendido; puede entrar en zona las próximas semanas.
+**Señal opciones** (informativa, no filtra): put/call por volumen ≤ 0.5 con 5.000+ contratos — detecta apuestas call especulativas. Fiable en valores medianos; en megacaps el volumen de coberturas la diluye.
 
 *Ojo: F3 (RS, fuerza relativa contra el índice) y F4 (RSI, oscilador) son cosas distintas pese al nombre parecido.*
 """)
@@ -254,7 +255,8 @@ if vista.empty:
 else:
     st.dataframe(
         vista[["ticker", "sector", "precio", "ret_100d", "ret_200d",
-               "exceso_6m", "exceso_3m", "rsi_14", "pasa_todo"]],
+               "exceso_6m", "exceso_3m", "rsi_14",
+               "pc_ratio_vol", "vol_opciones", "senal_pc", "pasa_todo"]],
         hide_index=True,
         use_container_width=True,
         column_config={
@@ -267,6 +269,15 @@ else:
             "exceso_3m": st.column_config.NumberColumn("Exceso 3m", format="percent"),
             "rsi_14": st.column_config.NumberColumn("RSI", format="%.0f"),
             "pasa_todo": st.column_config.CheckboxColumn("Finalista"),
+            "pc_ratio_vol": st.column_config.NumberColumn(
+                "P/C vol", format="%.2f",
+                help="Put/Call por volumen, vencimientos ≤ 90 días. "
+                     "≤ 0.5 indica sesgo call especulativo."),
+            "vol_opciones": st.column_config.NumberColumn(
+                "Contratos", format="localized"),
+            "senal_pc": st.column_config.CheckboxColumn(
+                "Señal opciones",
+                help="Ratio ≤ 0.5 con al menos 5.000 contratos."),
         },
     )
 
