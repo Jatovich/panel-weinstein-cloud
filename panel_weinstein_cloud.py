@@ -44,7 +44,7 @@ COLOR_ETAPA = {1: "#94a3b8", 2: "#16a34a", 3: "#f59e0b", 4: "#dc2626"}
 # ------------------------------------------------------------------
 # Carga de datos desde BigQuery (con caché de 1 hora)
 # ------------------------------------------------------------------
-@st.cache_resource
+@st.cache_data(ttl=3600)
 def conectar_bigquery() -> bigquery.Client:
     credenciales = service_account.Credentials.from_service_account_info(
         dict(st.secrets["gcp_service_account"])
@@ -58,37 +58,31 @@ def cargar_datos():
     tabla_amplitud = f"`{ID_PROYECTO_GCP}.{DATASET_BIGQUERY}.indicadores_amplitud`"
     tabla_stage = f"`{ID_PROYECTO_GCP}.{DATASET_BIGQUERY}.stage_indice`"
     tabla_m2 = f"`{ID_PROYECTO_GCP}.{DATASET_BIGQUERY}.m2_liquidez`"
+    tabla_putcall = f"`{ID_PROYECTO_GCP}.{DATASET_BIGQUERY}.putcall_indice`"
 
     amplitud = cliente.query(f"SELECT * FROM {tabla_amplitud} ORDER BY fecha").to_dataframe()
     stage = cliente.query(
         f"SELECT * FROM {tabla_stage} WHERE indice = 'SP500' ORDER BY fecha"
     ).to_dataframe()
 
-    # La tabla M2 puede no existir todavía si el workflow aún no la ha creado
     try:
         m2 = cliente.query(f"SELECT * FROM {tabla_m2} ORDER BY fecha").to_dataframe()
         m2["fecha"] = pd.to_datetime(m2["fecha"])
     except Exception:
         m2 = pd.DataFrame()
 
+    try:
+        putcall = cliente.query(
+            f"SELECT * FROM {tabla_putcall} ORDER BY fecha DESC LIMIT 4"
+        ).to_dataframe()
+        putcall["fecha"] = pd.to_datetime(putcall["fecha"])
+    except Exception:
+        putcall = pd.DataFrame()
+
     amplitud["fecha"] = pd.to_datetime(amplitud["fecha"])
     stage["fecha"] = pd.to_datetime(stage["fecha"])
-    return amplitud, stage, m2
+    return amplitud, stage, m2, putcall
 
-@st.cache_data(ttl=3600)
-def cargar_putcall() -> pd.DataFrame:
-    """Serie del put/call del SPY. Vacío si la tabla aún no existe."""
-    cliente = conectar_bigquery()
-    try:
-        df = cliente.query(
-            f"SELECT fecha, pc_ratio_vol, pc_ratio_oi "
-            f"FROM `{ID_PROYECTO_GCP}.{DATASET_BIGQUERY}.putcall_indice` "
-            f"ORDER BY fecha"
-        ).to_dataframe()
-        df["fecha"] = pd.to_datetime(df["fecha"])
-        return df
-    except Exception:
-        return pd.DataFrame()
 
 # ------------------------------------------------------------------
 # Configuración de página
@@ -97,8 +91,7 @@ st.set_page_config(page_title="Panel Weinstein", page_icon="📈", layout="wide"
 st.title("📈 Panel de Mercado — Método Weinstein")
 st.caption("S&P 500 · Indicadores de amplitud del capítulo 8")
 
-amplitud, stage, m2 = cargar_datos()
-putcall = cargar_putcall()
+amplitud, stage, m2, putcall = cargar_datos()
 
 if amplitud.empty or stage.empty:
     st.warning("Todavía no hay datos sincronizados en BigQuery. Vuelve a intentarlo más tarde.")
@@ -115,7 +108,7 @@ anterior_amplitud = amplitud.iloc[-2] if len(amplitud) > 1 else ultima_amplitud
 # ------------------------------------------------------------------
 # CABECERA: "de un vistazo"
 # ------------------------------------------------------------------
-col1, col2, col3, col4, col5, col6 = st.columns(6)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 etapa_actual = ultima_stage["etapa"]
 etapa_texto = NOMBRES_ETAPA.get(etapa_actual, "Sin clasificar (media plana)")
@@ -189,23 +182,6 @@ with col5:
         st.caption(f"Dato a: {ultima_m2['fecha'].date()}")
     else:
         st.caption("Sin datos de M2 todavía")
-with col6:
-    if not putcall.empty:
-        actual = putcall.iloc[-1]
-        delta = (float(actual["pc_ratio_vol"]) - float(putcall.iloc[-2]["pc_ratio_vol"])
-                 if len(putcall) > 1 else None)
-        st.metric(
-            "Put/Call SPY (vol)",
-            f"{actual['pc_ratio_vol']:.2f}",
-            delta=f"{delta:+.2f}" if delta is not None else None,
-            delta_color="inverse",
-            help=("Sentimiento con lectura contraria: muy alto = miedo "
-                  "(cobertura masiva, típico de suelos); muy bajo = "
-                  "complacencia. Vencimientos ≤ 90 días."),
-        )
-    else:
-        st.markdown("**Put/Call SPY**")
-        st.caption("Sin datos todavía")
 
 st.caption(f"Datos a fecha de la última semana cargada: {ultima_amplitud['fecha'].date()}")
 st.divider()
@@ -234,7 +210,7 @@ for etapa_num, color in COLOR_ETAPA.items():
             name=NOMBRES_ETAPA[etapa_num], showlegend=True,
         ))
 fig_precio.update_layout(height=420, hovermode="x unified", legend=dict(orientation="h", y=-0.2))
-st.plotly_chart(fig_precio, width="stretch")
+st.plotly_chart(fig_precio, use_container_width=True)
 
 
 # ------------------------------------------------------------------
@@ -251,7 +227,7 @@ fig_pct.add_trace(go.Scatter(
 fig_pct.add_hline(y=70, line_dash="dash", line_color="#dc2626", annotation_text="Sobrecompra (70%)")
 fig_pct.add_hline(y=30, line_dash="dash", line_color="#dc2626", annotation_text="Sobreventa (30%)")
 fig_pct.update_layout(height=350, yaxis_range=[0, 100])
-st.plotly_chart(fig_pct, width="stretch")
+st.plotly_chart(fig_pct, use_container_width=True)
 
 
 # ------------------------------------------------------------------
@@ -269,7 +245,7 @@ fig_hl.add_trace(go.Bar(
     name="Nuevos mínimos", marker_color="#dc2626",
 ))
 fig_hl.update_layout(height=320, barmode="relative", bargap=0.1)
-st.plotly_chart(fig_hl, width="stretch")
+st.plotly_chart(fig_hl, use_container_width=True)
 
 
 # ------------------------------------------------------------------
@@ -368,7 +344,7 @@ for i in range(1, len(valores_ad)):
 fig_combo.update_yaxes(title_text="Precio S&P 500", secondary_y=False)
 fig_combo.update_yaxes(title_text="Línea Avance/Declive", secondary_y=True)
 fig_combo.update_layout(height=420, hovermode="x", legend=dict(orientation="h", y=-0.2))
-st.plotly_chart(fig_combo, width="stretch")
+st.plotly_chart(fig_combo, use_container_width=True)
 
 st.divider()
 
@@ -412,28 +388,9 @@ if not m2.empty:
         height=380, hovermode="x unified",
         legend=dict(orientation="h", y=-0.2),
     )
-    st.plotly_chart(fig_m2, width="stretch")
+    st.plotly_chart(fig_m2, use_container_width=True)
 else:
     st.info("Los datos de M2 se cargarán en la próxima actualización semanal.")
-
-# ------------------------------------------------------------------
-# GRÁFICO 6: Put/Call ratio del SPY
-# ------------------------------------------------------------------
-st.subheader("Put/Call ratio del SPY")
-st.caption("Serie propia, un punto por semana desde julio 2026. "
-           "Lectura contraria en extremos: picos = miedo, valles = complacencia.")
-
-if not putcall.empty:
-    fig_pc = go.Figure()
-    fig_pc.add_trace(go.Scatter(x=putcall["fecha"], y=putcall["pc_ratio_vol"],
-                                name="Por volumen", mode="lines+markers"))
-    fig_pc.add_trace(go.Scatter(x=putcall["fecha"], y=putcall["pc_ratio_oi"],
-                                name="Por open interest", mode="lines+markers",
-                                line=dict(dash="dot")))
-    fig_pc.update_layout(height=320, legend=dict(orientation="h", y=1.05))
-    st.plotly_chart(fig_pc, width="stretch")
-else:
-    st.info("La serie se irá construyendo con cada pasada semanal del screener.")    
 st.subheader("📋 Análisis semanal")
 st.caption("Texto generado automáticamente a partir de los datos. Puedes copiarlo y adaptarlo para tu newsletter o grupo de Telegram.")
 
@@ -459,7 +416,7 @@ stage_sel = stage_ord[stage_ord["fecha"].dt.strftime("%Y-%m-%d") <= fecha_sel_st
 if amplitud_sel.empty or stage_sel.empty:
     st.warning("No hay datos suficientes para la semana seleccionada.")
 else:
-    def generar_analisis(amplitud, stage, m2=None) -> str:
+    def generar_analisis(amplitud, stage, m2=None, putcall=None) -> str:
         ua = amplitud.iloc[-1]
         ant = amplitud.iloc[-2] if len(amplitud) > 1 else ua
         us = stage.iloc[-1]
@@ -566,13 +523,47 @@ else:
                       f"interanual y su tendencia reciente es {tendencia_m2.lower() if tendencia_m2 else 'indeterminada'}, "
                       f"lo que señala una {lectura_m2}.")
 
+        # --- Párrafo 6: Put/Call ratio ---
+        p6 = ""
+        if putcall is not None and not putcall.empty:
+            pc_val = float(putcall.iloc[0]["pc_ratio_vol"]) if "pc_ratio_vol" in putcall.columns else None
+            if pc_val is not None:
+                if pc_val > 1.5:
+                    lectura_pc = (
+                        f"un nivel muy elevado ({pc_val:.2f}), señal de miedo significativo: "
+                        f"los inversores se están cubriendo masivamente ante posibles caídas a corto plazo. "
+                        f"Este nivel, combinado con una rotación sectorial hacia valores defensivos "
+                        f"(Energía, Salud), refuerza la cautela aunque el mercado siga en Etapa 2."
+                    )
+                elif pc_val > 1.2:
+                    lectura_pc = (
+                        f"un nivel elevado ({pc_val:.2f}), indicando que los inversores están "
+                        f"aumentando su cobertura ante posibles zozobras a corto plazo. "
+                        f"Conviene vigilar si esta señal de cautela se confirma con debilidad "
+                        f"en los demás indicadores de amplitud."
+                    )
+                elif pc_val > 0.8:
+                    lectura_pc = (
+                        f"un nivel neutral ({pc_val:.2f}), sin señales de miedo ni euforia "
+                        f"excesiva en el mercado de opciones."
+                    )
+                else:
+                    lectura_pc = (
+                        f"un nivel bajo ({pc_val:.2f}), reflejando cierta complacencia o euforia "
+                        f"en el mercado — históricamente una señal de precaución contrarian."
+                    )
+                p6 = f"**Ratio Put/Call (SPY):** el mercado de opciones muestra {lectura_pc}"
+
         parrafos = [p1, p2, p3, p4]
         if p5:
             parrafos.append(p5)
+        if p6:
+            parrafos.append(p6)
         return "\n\n".join(parrafos)
 
     m2_sel = m2[m2["fecha"].dt.strftime("%Y-%m-%d") <= fecha_sel_str].copy() if not m2.empty else m2
-    texto_analisis = generar_analisis(amplitud_sel, stage_sel, m2_sel)
+    putcall_sel = putcall[putcall["fecha"].dt.strftime("%Y-%m-%d") <= fecha_sel_str].sort_values("fecha", ascending=False).head(1) if not putcall.empty else putcall
+    texto_analisis = generar_analisis(amplitud_sel, stage_sel, m2_sel, putcall_sel)
     st.markdown(texto_analisis)
 
     texto_plano = texto_analisis.replace("**", "").replace("⚠️ ", "")
