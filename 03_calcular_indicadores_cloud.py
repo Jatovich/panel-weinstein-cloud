@@ -159,11 +159,6 @@ def main():
     print("Cargando precios desde BigQuery...")
     precios = cargar_precios(cliente)
     print(f"  {len(precios)} filas de {precios['ticker'].nunique()} tickers.")
-    print(f"  Fecha mínima: {precios['fecha'].min()}")
-    print(f"  Fecha máxima: {precios['fecha'].max()}")
-    print(f"  Fechas únicas en las últimas 3 semanas:")
-    print(precios['fecha'].drop_duplicates().sort_values().tail(3).to_string())
-    print(f"  Tickers con fecha máxima 2026-07-13: {(precios.groupby('ticker')['fecha'].max() == precios['fecha'].max()).sum()}")
 
     print("Calculando indicadores de amplitud...")
     indicadores = calcular_indicadores_amplitud(precios)
