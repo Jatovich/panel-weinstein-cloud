@@ -22,7 +22,6 @@ VENTANA_MEDIA = 30
 VENTANA_52S = 52
 VENTANA_VOLUMEN = 10
 UMBRAL_VOLUMEN_RUPTURA = 1.3
-UNIVERSO_MINIMO = 400
 
 
 def conectar_bigquery() -> bigquery.Client:
@@ -41,20 +40,6 @@ def cargar_precios(cliente: bigquery.Client) -> pd.DataFrame:
 # --- Misma lógica de cálculo que la versión MariaDB ---
 def calcular_indicadores_amplitud(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["ticker", "fecha"]).copy()
-
-    # Guardarraíl: descartar fechas con universo incompleto. Una semana con
-    # pocos tickers produce indicadores basura (0.0%, saldos absurdos) y
-    # contaminaría la línea A/D acumulada.
-    # Solo semanas cerradas: descartar la semana en curso (etiqueta-lunes actual).
-    lunes_actual = (pd.Timestamp.today().normalize()
-                    - pd.Timedelta(days=pd.Timestamp.today().weekday()))
-    df = df[df["fecha"] < lunes_actual]
-    conteo = df.groupby("fecha")["ticker"].transform("count")
-    fechas_malas = df.loc[conteo < UNIVERSO_MINIMO, "fecha"].unique()
-    if len(fechas_malas):
-        print(f"  [AVISO] Descartadas fechas con universo < {UNIVERSO_MINIMO}: "
-              f"{sorted(pd.to_datetime(fechas_malas).strftime('%Y-%m-%d'))}")
-    df = df[conteo >= UNIVERSO_MINIMO].copy()
 
     df["media_30s"] = df.groupby("ticker")["cierre"].transform(
         lambda s: s.rolling(VENTANA_MEDIA, min_periods=VENTANA_MEDIA).mean()
@@ -113,11 +98,6 @@ def calcular_stage_indice(ticker_indice: str = "^GSPC", nombre_guardado: str = "
     datos["fecha"] = pd.to_datetime(datos["fecha"])
     if isinstance(datos.columns, pd.MultiIndex):
         datos.columns = [c[0] for c in datos.columns]
-
-    # Solo semanas cerradas: descartar la barra de la semana en curso.
-    lunes_actual = (pd.Timestamp.today().normalize()
-                    - pd.Timedelta(days=pd.Timestamp.today().weekday()))
-    datos = datos[datos["fecha"] < lunes_actual]
 
     datos["media_30s"] = datos["cierre"].rolling(VENTANA_MEDIA, min_periods=VENTANA_MEDIA).mean()
     media_previa = datos["media_30s"].shift(2)
@@ -179,6 +159,11 @@ def main():
     print("Cargando precios desde BigQuery...")
     precios = cargar_precios(cliente)
     print(f"  {len(precios)} filas de {precios['ticker'].nunique()} tickers.")
+    print(f"  Fecha mínima: {precios['fecha'].min()}")
+    print(f"  Fecha máxima: {precios['fecha'].max()}")
+    print(f"  Fechas únicas en las últimas 3 semanas:")
+    print(precios['fecha'].drop_duplicates().sort_values().tail(3).to_string())
+    print(f"  Tickers con fecha máxima 2026-07-13: {(precios.groupby('ticker')['fecha'].max() == precios['fecha'].max()).sum()}")
 
     print("Calculando indicadores de amplitud...")
     indicadores = calcular_indicadores_amplitud(precios)
