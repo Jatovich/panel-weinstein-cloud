@@ -44,7 +44,6 @@ COLOR_ETAPA = {1: "#94a3b8", 2: "#16a34a", 3: "#f59e0b", 4: "#dc2626"}
 # ------------------------------------------------------------------
 # Carga de datos desde BigQuery (con caché de 1 hora)
 # ------------------------------------------------------------------
-@st.cache_data(ttl=3600)
 def conectar_bigquery() -> bigquery.Client:
     credenciales = service_account.Credentials.from_service_account_info(
         dict(st.secrets["gcp_service_account"])
