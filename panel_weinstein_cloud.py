@@ -107,7 +107,7 @@ anterior_amplitud = amplitud.iloc[-2] if len(amplitud) > 1 else ultima_amplitud
 # ------------------------------------------------------------------
 # CABECERA: "de un vistazo"
 # ------------------------------------------------------------------
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4, col5, col6 = st.columns(6)
 
 etapa_actual = ultima_stage["etapa"]
 etapa_texto = NOMBRES_ETAPA.get(etapa_actual, "Sin clasificar (media plana)")
@@ -181,6 +181,28 @@ with col5:
         st.caption(f"Dato a: {ultima_m2['fecha'].date()}")
     else:
         st.caption("Sin datos de M2 todavía")
+
+with col6:
+    st.markdown("**Ratio Put/Call SPY**")
+    if not putcall.empty and "pc_ratio_vol" in putcall.columns:
+        pc_val = float(putcall.sort_values("fecha", ascending=False).iloc[0]["pc_ratio_vol"])
+        pc_anterior = float(putcall.sort_values("fecha", ascending=False).iloc[1]["pc_ratio_vol"]) if len(putcall) > 1 else pc_val
+        delta_pc = pc_val - pc_anterior
+        color_pc = "#dc2626" if pc_val > 1.2 else ("#f59e0b" if pc_val > 0.8 else "#16a34a")
+        st.markdown(
+            f"<h3 style='color:{color_pc}'>{pc_val:.2f}</h3>",
+            unsafe_allow_html=True,
+        )
+        delta_txt = f"↑ +{delta_pc:.2f}" if delta_pc >= 0 else f"↓ {delta_pc:.2f}"
+        st.caption(delta_txt)
+        if pc_val > 1.5:
+            st.caption("⚠️ Miedo elevado — cobertura masiva")
+        elif pc_val > 1.2:
+            st.caption("⚠️ Cautela — inversores cubriéndose")
+        elif pc_val < 0.8:
+            st.caption("⚠️ Complacencia — posible exceso alcista")
+    else:
+        st.caption("Sin datos de Put/Call todavía")
 
 st.caption(f"Datos a fecha de la última semana cargada: {ultima_amplitud['fecha'].date()}")
 st.divider()
@@ -561,7 +583,9 @@ else:
         return "\n\n".join(parrafos)
 
     m2_sel = m2[m2["fecha"].dt.strftime("%Y-%m-%d") <= fecha_sel_str].copy() if not m2.empty else m2
-    putcall_sel = putcall[putcall["fecha"].dt.strftime("%Y-%m-%d") <= fecha_sel_str].sort_values("fecha", ascending=False).head(1) if not putcall.empty else putcall
+    # Para putcall usamos el dato más reciente disponible (no filtramos estrictamente
+    # por fecha de la semana, ya que los datos de opciones pueden tener fechas distintas)
+    putcall_sel = putcall.sort_values("fecha", ascending=False).head(1) if not putcall.empty else putcall
     texto_analisis = generar_analisis(amplitud_sel, stage_sel, m2_sel, putcall_sel)
     st.markdown(texto_analisis)
 
