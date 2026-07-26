@@ -540,9 +540,16 @@ else:
                     lectura_m2 = "ligera contracción de liquidez, contexto de cautela"
                 else:
                     lectura_m2 = "contracción notable de liquidez, contexto históricamente desfavorable para la renta variable"
+                retraso_m2 = ""
+                try:
+                    dias_retraso = (pd.Timestamp(ua["fecha"]) - pd.Timestamp(um2["fecha"])).days
+                    if dias_retraso > 21:
+                        retraso_m2 = f" (último dato disponible: {pd.Timestamp(um2['fecha']).strftime('%d/%m/%Y')} — FRED publica con ~2 semanas de retraso)"
+                except Exception:
+                    pass
                 p5 = (f"**Liquidez M2 (USA):** la oferta monetaria crece a un ritmo del {yoy:+.1f}% "
                       f"interanual y su tendencia reciente es {tendencia_m2.lower() if tendencia_m2 else 'indeterminada'}, "
-                      f"lo que señala una {lectura_m2}.")
+                      f"lo que señala una {lectura_m2}.{retraso_m2}")
 
         # --- Párrafo 6: Put/Call ratio ---
         p6 = ""
@@ -583,9 +590,9 @@ else:
         return "\n\n".join(parrafos)
 
     m2_sel = m2[m2["fecha"].dt.strftime("%Y-%m-%d") <= fecha_sel_str].copy() if not m2.empty else m2
-    # Para putcall usamos el dato más reciente disponible (no filtramos estrictamente
-    # por fecha de la semana, ya que los datos de opciones pueden tener fechas distintas)
-    putcall_sel = putcall.sort_values("fecha", ascending=False).head(1) if not putcall.empty else putcall
+    # Put/Call: el dato más reciente disponible hasta la semana seleccionada
+    putcall_filtrado = putcall[putcall["fecha"].dt.strftime("%Y-%m-%d") <= fecha_sel_str] if not putcall.empty else putcall
+    putcall_sel = putcall_filtrado.sort_values("fecha", ascending=False).head(1) if not putcall_filtrado.empty else pd.DataFrame()
     texto_analisis = generar_analisis(amplitud_sel, stage_sel, m2_sel, putcall_sel)
     st.markdown(texto_analisis)
 
