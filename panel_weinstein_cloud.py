@@ -590,9 +590,23 @@ else:
         return "\n\n".join(parrafos)
 
     m2_sel = m2[m2["fecha"].dt.strftime("%Y-%m-%d") <= fecha_sel_str].copy() if not m2.empty else m2
-    # Put/Call: el dato más reciente disponible hasta la semana seleccionada
-    putcall_filtrado = putcall[putcall["fecha"].dt.strftime("%Y-%m-%d") <= fecha_sel_str] if not putcall.empty else putcall
-    putcall_sel = putcall_filtrado.sort_values("fecha", ascending=False).head(1) if not putcall_filtrado.empty else pd.DataFrame()
+    # Put/Call: las fechas de opciones son de viernes/sábado, las semanas de amplitud
+    # usan el domingo — buscamos el dato más reciente dentro de la misma semana
+    # (hasta 6 días después de la fecha de inicio de semana seleccionada)
+    if not putcall.empty:
+        fecha_inicio_semana = pd.Timestamp(fecha_seleccionada)
+        fecha_fin_semana = fecha_inicio_semana + pd.Timedelta(days=6)
+        fin_str = fecha_fin_semana.strftime("%Y-%m-%d")
+        putcall_ventana = putcall[
+            (putcall["fecha"].dt.strftime("%Y-%m-%d") >= fecha_sel_str) &
+            (putcall["fecha"].dt.strftime("%Y-%m-%d") <= fin_str)
+        ]
+        if putcall_ventana.empty:
+            # Si no hay dato en esa semana, cogemos el más reciente anterior
+            putcall_ventana = putcall[putcall["fecha"].dt.strftime("%Y-%m-%d") <= fin_str]
+        putcall_sel = putcall_ventana.sort_values("fecha", ascending=False).head(1)
+    else:
+        putcall_sel = pd.DataFrame()
     texto_analisis = generar_analisis(amplitud_sel, stage_sel, m2_sel, putcall_sel)
     st.markdown(texto_analisis)
 
